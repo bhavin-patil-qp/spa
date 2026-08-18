@@ -11,6 +11,9 @@
 # production
 /build
 
+# test artifacts
+/test-results
+
 # misc
 .DS_Store
 .env.local
