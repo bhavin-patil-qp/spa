@@ -106,13 +106,15 @@ const TBtn = ({ active, disabled, onClick, title, children }: TBtnProps) => (
     className={`re-tbtn${active ? ' active' : ''}${disabled ? ' disabled' : ''}`}
     onMouseDown={e => { e.preventDefault(); if (!disabled) onClick(); }}
     title={title}
+    aria-label={title}
+    aria-pressed={active}
     type="button"
   >
     {children}
   </button>
 );
 
-const Divider = () => <span className="re-divider" />;
+const Divider = () => <span className="re-divider" aria-hidden="true" />;
 
 const WEEKLY_UPDATE_HTML = `
 <h1>Engineering Weekly Update</h1>
@@ -228,13 +230,24 @@ const RichEditor = () => {
     setMarkdown('');
   };
 
+  const confirmReplace = (nextHtml: string) => {
+    if (!editor) return false;
+    const isEmpty = editor.getText().trim() === '';
+    if (!isEmpty && savedHtml !== nextHtml) {
+      return window.confirm('Replace the current document with this template? This cannot be undone.');
+    }
+    return true;
+  };
+
   const handleInsertTdd = () => {
+    if (!confirmReplace(TDD_HTML)) return;
     editor?.commands.setContent(TDD_HTML);
     setMarkdown(td.turndown(TDD_HTML));
     setSavedHtml(TDD_HTML);
   };
 
   const handleInsertWeeklyUpdate = () => {
+    if (!confirmReplace(WEEKLY_UPDATE_HTML)) return;
     editor?.commands.setContent(WEEKLY_UPDATE_HTML);
     setMarkdown(td.turndown(WEEKLY_UPDATE_HTML));
     setSavedHtml(WEEKLY_UPDATE_HTML);
@@ -246,10 +259,11 @@ const RichEditor = () => {
     <div className="re-root">
       {/* ── Toolbar ── */}
       <div className="re-toolbar">
-        <div className="re-toolbar-left">
+        <div className="re-toolbar-left" role="toolbar" aria-label="Text formatting">
           {/* Paragraph styles */}
           <select
             className="re-select"
+            aria-label="Paragraph style"
             value={
               editor.isActive('heading', { level: 1 }) ? 'h1'
               : editor.isActive('heading', { level: 2 }) ? 'h2'

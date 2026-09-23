@@ -3,6 +3,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
+import { asBlob } from 'html-docx-js-typescript';
 
 mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
 
@@ -294,6 +295,136 @@ npm run deploy:production
   - Keep dependencies up to date (run \`npm audit\` regularly)
 `;
 
+const PREVIEW_STYLES = `
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; color: #1a1a2e; }
+    h1, h2, h3, h4, h5, h6 { margin: 1.4em 0 0.4em; font-weight: 700; line-height: 1.25; }
+    p { margin: 0 0 1em; }
+    a { color: #4f46e5; }
+    code { background: #f1f5f9; border-radius: 4px; padding: 2px 5px; font-size: 0.88em; font-family: 'Fira Code', 'Cascadia Code', monospace; }
+    pre { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 16px; overflow-x: auto; }
+    pre code { background: none; color: inherit; padding: 0; font-size: 0.9em; }
+    blockquote { margin: 0 0 1em; padding: 0.6em 1em; border-left: 4px solid #818cf8; background: #f5f3ff; border-radius: 0 6px 6px 0; color: #4b5563; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+    th { background: #f8fafc; font-weight: 600; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    img { max-width: 100%; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
+    ul, ol { padding-left: 1.5em; margin: 0 0 1em; }
+    li { margin: 0.25em 0; }
+    svg { max-width: 100%; }`;
+
+const buildPreviewDocument = (html: string, extraStyle = '') => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Markdown Preview</title>
+  <style>${PREVIEW_STYLES}
+    ${extraStyle}
+  </style>
+</head>
+<body>${html}</body>
+</html>`;
+
+// Google Docs (and most rich-text paste targets) strip <style> tags and CSS
+// classes, and can't reliably render inline <svg>. To keep formatting when
+// pasting, every element needs its look baked into a `style` attribute, and
+// Mermaid diagrams need to become raster images.
+const CLIPBOARD_STYLE_MAP: Record<string, string> = {
+  h1: 'font-size:28px;font-weight:700;margin:20px 0 10px;line-height:1.25;font-family:Arial,sans-serif;color:#1a1a2e;',
+  h2: 'font-size:23px;font-weight:700;margin:18px 0 8px;line-height:1.25;font-family:Arial,sans-serif;color:#1a1a2e;',
+  h3: 'font-size:19px;font-weight:700;margin:16px 0 6px;line-height:1.25;font-family:Arial,sans-serif;color:#1a1a2e;',
+  h4: 'font-size:16px;font-weight:700;margin:14px 0 6px;line-height:1.25;font-family:Arial,sans-serif;color:#1a1a2e;',
+  h5: 'font-size:14px;font-weight:700;margin:12px 0 6px;line-height:1.25;font-family:Arial,sans-serif;color:#1a1a2e;',
+  h6: 'font-size:13px;font-weight:700;margin:12px 0 6px;line-height:1.25;font-family:Arial,sans-serif;color:#4b5563;',
+  p: 'margin:0 0 14px;font-family:Arial,sans-serif;font-size:14px;line-height:1.7;color:#1a1a2e;',
+  a: 'color:#4f46e5;text-decoration:underline;',
+  code: 'background:#f1f5f9;border-radius:4px;padding:2px 5px;font-family:Consolas,"Courier New",monospace;font-size:13px;color:#1a1a2e;',
+  pre: 'background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:16px;font-family:Consolas,"Courier New",monospace;font-size:13px;white-space:pre-wrap;',
+  blockquote: 'margin:0 0 14px;padding:10px 16px;border-left:4px solid #818cf8;background:#f5f3ff;color:#4b5563;font-family:Arial,sans-serif;font-size:14px;',
+  table: 'border-collapse:collapse;width:100%;margin:14px 0;font-family:Arial,sans-serif;font-size:14px;',
+  th: 'border:1px solid #cbd5e1;padding:8px 12px;text-align:left;background:#f8fafc;font-weight:600;',
+  td: 'border:1px solid #cbd5e1;padding:8px 12px;text-align:left;',
+  ul: 'padding-left:24px;margin:0 0 14px;font-family:Arial,sans-serif;font-size:14px;',
+  ol: 'padding-left:24px;margin:0 0 14px;font-family:Arial,sans-serif;font-size:14px;',
+  li: 'margin:4px 0;',
+  hr: 'border:none;border-top:1px solid #e2e8f0;margin:28px 0;',
+  img: 'max-width:100%;',
+  strong: 'font-weight:700;',
+  em: 'font-style:italic;',
+  del: 'text-decoration:line-through;',
+};
+
+const svgToPngDataUrl = (svg: SVGSVGElement): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const rect = svg.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width || 600));
+    const height = Math.max(1, Math.round(rect.height || 300));
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute('width', String(width));
+    clone.setAttribute('height', String(height));
+    const svgText = new XMLSerializer().serializeToString(clone);
+    const svgDataUrl = `data:image/svg+xml;charset=utf-8;base64,${btoa(unescape(encodeURIComponent(svgText)))}`;
+
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('no canvas context')); return; }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = reject;
+    img.src = svgDataUrl;
+  });
+};
+
+const applyClipboardStyles = (node: Element) => {
+  const tag = node.tagName.toLowerCase();
+  const isPreCode = tag === 'code' && node.parentElement?.tagName.toLowerCase() === 'pre';
+  const rule = isPreCode
+    ? 'background:none;color:inherit;padding:0;font-family:Consolas,"Courier New",monospace;font-size:13px;'
+    : CLIPBOARD_STYLE_MAP[tag];
+  if (rule) {
+    const existing = node.getAttribute('style') ?? '';
+    node.setAttribute('style', `${rule}${existing}`);
+  }
+  Array.from(node.children).forEach(applyClipboardStyles);
+};
+
+const buildClipboardHtml = async (source: HTMLElement): Promise<string> => {
+  const clone = source.cloneNode(true) as HTMLElement;
+
+  const originalSvgs = Array.from(source.querySelectorAll('.mermaid-wrap svg')) as SVGSVGElement[];
+  const clonedWraps = Array.from(clone.querySelectorAll('.mermaid-wrap'));
+  await Promise.all(originalSvgs.map(async (svg, i) => {
+    const wrap = clonedWraps[i];
+    if (!wrap) return;
+    try {
+      const dataUrl = await svgToPngDataUrl(svg);
+      const rect = svg.getBoundingClientRect();
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.width = Math.round(rect.width);
+      img.height = Math.round(rect.height);
+      img.style.maxWidth = '100%';
+      wrap.replaceChildren(img);
+    } catch {
+      // leave the raw svg in place if rasterization fails
+    }
+  }));
+
+  clone.setAttribute('style', 'font-family:Arial,sans-serif;color:#1a1a2e;');
+  applyClipboardStyles(clone);
+  return clone.innerHTML;
+};
+
 let mermaidCounter = 0;
 
 const MermaidBlock = ({ code }: { code: string }) => {
@@ -314,72 +445,125 @@ const MermaidBlock = ({ code }: { code: string }) => {
   return <div className="mermaid-wrap" ref={ref} />;
 };
 
+const MIN_PANE_PCT = 20;
+const MAX_PANE_PCT = 80;
+
 const MarkdownViewer = () => {
   const [md, setMd] = useLocalStorage('ws:markdown', DEFAULT_MD);
   const [editorOpen, setEditorOpen] = useLocalStorage('ws:markdown:editorOpen', true);
+  const [leftWidth, setLeftWidth] = useLocalStorage('ws:markdown:leftWidth', 50);
   const [previewMaximized, setPreviewMaximized] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const panelsRef = useRef<HTMLDivElement>(null);
 
-  const handleDownloadPdf = useCallback(() => {
-    const el = previewRef.current;
-    if (!el) return;
-    const html = el.innerHTML;
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Markdown Preview</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; color: #1a1a2e; padding: 40px; max-width: 860px; margin: 0 auto; }
-    h1, h2, h3, h4, h5, h6 { margin: 1.4em 0 0.4em; font-weight: 700; line-height: 1.25; }
-    p { margin: 0 0 1em; }
-    a { color: #4f46e5; }
-    code { background: #f1f5f9; border-radius: 4px; padding: 2px 5px; font-size: 0.88em; font-family: 'Fira Code', 'Cascadia Code', monospace; }
-    pre { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 16px; overflow-x: auto; }
-    pre code { background: none; color: inherit; padding: 0; font-size: 0.9em; }
-    blockquote { margin: 0 0 1em; padding: 0.6em 1em; border-left: 4px solid #818cf8; background: #f5f3ff; border-radius: 0 6px 6px 0; color: #4b5563; }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
-    th { background: #f8fafc; font-weight: 600; }
-    tr:nth-child(even) td { background: #f8fafc; }
-    img { max-width: 100%; }
-    hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
-    ul, ol { padding-left: 1.5em; margin: 0 0 1em; }
-    li { margin: 0.25em 0; }
-    svg { max-width: 100%; }
-    @media print { body { padding: 20px; } }
-  </style>
-</head>
-<body>${html}</body>
-</html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 300);
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
   }, []);
 
+  useEffect(() => {
+    if (!dragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = panelsRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setLeftWidth(Math.min(MAX_PANE_PCT, Math.max(MIN_PANE_PCT, pct)));
+    };
+    const handleMouseUp = () => setDragging(false);
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragging, setLeftWidth]);
+
+  // Both exports go through an in-page preview step first — no popup window,
+  // no new tab, nothing that a browser/webview popup blocker can silently
+  // swallow. The user sees exactly what will be printed/exported and
+  // confirms before anything happens.
+  const [exportMode, setExportMode] = useState<null | 'pdf' | 'docx'>(null);
+  const [exportHtml, setExportHtml] = useState('');
+  const [exportingDocx, setExportingDocx] = useState(false);
+
+  const openPdfPreview = useCallback(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    setExportHtml(el.innerHTML);
+    setExportMode('pdf');
+  }, []);
+
+  const openDocxPreview = useCallback(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    setExportHtml(el.innerHTML);
+    setExportMode('docx');
+  }, []);
+
+  const closeExportPreview = useCallback(() => {
+    if (exportingDocx) return;
+    setExportMode(null);
+  }, [exportingDocx]);
+
+  const confirmPrint = useCallback(() => {
+    // The print stylesheet (see .md-export-print-area in App.css) hides
+    // everything on the page except this preview panel, so window.print()
+    // renders only the export content — no separate document to open.
+    window.print();
+    setExportMode(null);
+  }, []);
+
+  const confirmDocx = useCallback(async () => {
+    if (exportingDocx) return;
+    setExportingDocx(true);
+    try {
+      const fullHtml = buildPreviewDocument(exportHtml);
+      const blob = await asBlob(fullHtml);
+      const url = URL.createObjectURL(blob as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'document.docx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportMode(null);
+    } catch (err) {
+      window.alert('Could not generate the .docx file. Please try again.');
+      console.error(err);
+    } finally {
+      setExportingDocx(false);
+    }
+  }, [exportingDocx, exportHtml]);
+
   const handleInsertTdd = useCallback(() => {
+    if (md.trim() && md !== TDD_TEMPLATE && !window.confirm('Replace the current document with the TDD template? This cannot be undone.')) {
+      return;
+    }
     setMd(TDD_TEMPLATE);
-  }, [setMd]);
+  }, [md, setMd]);
 
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     const el = previewRef.current;
     if (!el) return;
-    const html = el.innerHTML;
     const plain = el.innerText;
     try {
-      navigator.clipboard.write([
+      const html = await buildClipboardHtml(el);
+      await navigator.clipboard.write([
         new ClipboardItem({
           'text/html':  new Blob([html],  { type: 'text/html' }),
           'text/plain': new Blob([plain], { type: 'text/plain' }),
         }),
-      ]).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); });
+      ]);
+      setCopied(true); setTimeout(() => setCopied(false), 1800);
     } catch {
-      // fallback for browsers that don't support ClipboardItem
+      // fallback for browsers that don't support ClipboardItem or when inlining fails
       navigator.clipboard.writeText(plain).then(() => {
         setCopied(true); setTimeout(() => setCopied(false), 1800);
       }).catch(() => {});
@@ -423,24 +607,36 @@ const MarkdownViewer = () => {
           <button className="ws-btn ws-btn-ghost ws-btn-sm" onClick={handleCopy}>
             {copied ? '✓ Copied!' : 'Copy Preview'}
           </button>
-          <button className="ws-btn ws-btn-primary ws-btn-sm" onClick={handleDownloadPdf}>
+          <button
+            className="ws-btn ws-btn-ghost ws-btn-sm"
+            onClick={openDocxPreview}
+            title="Preview, then download as a Word (.docx) file"
+          >
+            ↓ Download DOCX
+          </button>
+          <button className="ws-btn ws-btn-primary ws-btn-sm" onClick={openPdfPreview}>
             ↓ Download PDF
           </button>
         </div>
       </div>
 
       {/* Panels */}
-      <div className={`md-panels${previewMaximized ? ' preview-maximized' : ''}`}>
+      <div
+        className={`md-panels${previewMaximized ? ' preview-maximized' : ''}${dragging ? ' dragging' : ''}`}
+        ref={panelsRef}
+      >
         {/* Left — Editor */}
-        <div className={`md-left ${editorOpen ? 'expanded' : 'collapsed'}`}>
+        <div
+          className={`md-left ${editorOpen ? 'expanded' : 'collapsed'}`}
+          style={editorOpen && !previewMaximized ? { width: `${leftWidth}%` } : undefined}
+        >
           <div className="md-panel-header">
             <span className="md-panel-label">Markdown</span>
             <span className="md-panel-stat">{md.length} chars · {md.split('\n').length} lines</span>
             <button
-              className="ws-btn ws-btn-ghost ws-btn-sm"
+              className="ws-btn ws-btn-ghost ws-btn-sm md-template-btn"
               onClick={handleInsertTdd}
-              title="Pre-fill with Technical Documentation template"
-              style={{ marginLeft: 'auto', fontSize: '0.75rem' }}
+              title="Replace current document with the Technical Documentation template"
             >
               + TDD Template
             </button>
@@ -453,6 +649,17 @@ const MarkdownViewer = () => {
             spellCheck={false}
           />
         </div>
+
+        {/* Drag handle */}
+        {editorOpen && !previewMaximized && (
+          <div
+            className="md-divider"
+            onMouseDown={handleDividerMouseDown}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize editor and preview panels"
+          />
+        )}
 
         {/* Right — Preview */}
         <div className="md-right">
@@ -486,6 +693,40 @@ const MarkdownViewer = () => {
           </div>
         </div>
       </div>
+
+      {/* Export preview — shown before anything actually downloads/prints */}
+      {exportMode && (
+        <div className="md-export-overlay" role="dialog" aria-modal="true">
+          <div className="md-export-modal">
+            <div className="md-export-modal-header">
+              <span>{exportMode === 'pdf' ? 'Print / Save as PDF' : 'Download as Word (.docx)'} — Preview</span>
+              <button className="ws-btn ws-btn-ghost ws-btn-sm" onClick={closeExportPreview} disabled={exportingDocx}>
+                ✕
+              </button>
+            </div>
+            <div className="md-export-modal-body">
+              <div
+                className="md-content md-export-print-area"
+                dangerouslySetInnerHTML={{ __html: exportHtml }}
+              />
+            </div>
+            <div className="md-export-modal-footer">
+              <button className="ws-btn ws-btn-ghost ws-btn-sm" onClick={closeExportPreview} disabled={exportingDocx}>
+                Cancel
+              </button>
+              {exportMode === 'pdf' ? (
+                <button className="ws-btn ws-btn-primary ws-btn-sm" onClick={confirmPrint}>
+                  🖨 Print / Save as PDF
+                </button>
+              ) : (
+                <button className="ws-btn ws-btn-primary ws-btn-sm" onClick={confirmDocx} disabled={exportingDocx}>
+                  {exportingDocx ? '… Generating' : '↓ Confirm Download'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
