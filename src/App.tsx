@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 
@@ -12,8 +12,14 @@ import RichEditor from './pages/RichEditor';
 import DiffViewer from './pages/DiffViewer';
 import TimeConverter from './pages/TimeConverter';
 import ColorTools from './pages/ColorTools';
+import ScriptLab from './pages/ScriptLab';
+import { loadSiteScriptFromStorage } from './hooks/useInjectedScript';
 
 function App() {
+  useEffect(() => {
+    loadSiteScriptFromStorage();
+  }, []);
+
   return (
     <Router basename={process.env.PUBLIC_URL}>
       <div className="layout">
@@ -29,6 +35,7 @@ function App() {
           <Route path="/diff" element={<DiffViewer />} />
           <Route path="/time" element={<TimeConverter />} />
           <Route path="/color" element={<ColorTools />} />
+          <Route path="/script-lab" element={<ScriptLab />} />
           </Routes>
         </main>
         <Footer />

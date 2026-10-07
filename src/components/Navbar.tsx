@@ -8,6 +8,7 @@ const TOOLS = [
   { to: '/diff',     label: 'Diff',      icon: '⇄'  },
   { to: '/time',     label: 'Time',      icon: '🕐' },
   { to: '/color',    label: 'Colors',    icon: '🎨' },
+  { to: '/script-lab', label: 'Script Lab', icon: '⚡' },
 ];
 
 const Navbar = () => {

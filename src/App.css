@@ -2800,3 +2800,82 @@
   margin: 0;
   overflow-x: auto;
 }
+
+/* ── Script Lab ─────────────────────────────────────────────── */
+.sl-root {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sl-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sl-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sl-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.sl-badge-active {
+  background: #ecfdf5;
+  color: #16a34a;
+}
+
+.sl-hint {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.sl-hint code {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.sl-textarea {
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid #e8e8e4;
+  border-radius: 10px;
+  padding: 14px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #1c1c1e;
+  background: #fff;
+  resize: vertical;
+}
+
+.sl-textarea::placeholder {
+  color: #9ca3af;
+}
+
+.sl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sl-savedat {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-left: auto;
+}
