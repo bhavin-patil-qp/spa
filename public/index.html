@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -7,6 +8,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="Web site created using create-react-app" />
+ 
+
+
   <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
   <!--
       manifest.json provides metadata used when your web app is installed on a
@@ -58,6 +62,76 @@
       }
     }
   </style>
+
+  <!-- ===================================================================
+       INTERCEPT #intercept-app LAYOUT-GAP REPRO  (temporary, remove later)
+       Restore with: mv public/index.html.bak public/index.html
+
+       Toggle via query string:
+         ?repro=1   host page sets html/body height:100%  <- the trigger
+         ?debug=1   outline #intercept-app so the phantom box is visible
+         ?repro=1&debug=1   both
+
+       Why: the widget stylesheet ships `#intercept-app { height: 100% }`.
+       A percentage height only resolves if the PARENT has a definite
+       height. With body height:auto it collapses to 0 and you see
+       nothing. Give body a definite height and the empty mount div
+       inflates to a full viewport below the footer.
+       =================================================================== -->
+  <style id="intercept-repro-styles">
+    html.repro-host-height,
+    html.repro-host-height body {
+      height: 100%;
+    }
+
+    html.repro-debug #intercept-app {
+      outline: 3px dashed #e00;
+      background: repeating-linear-gradient(45deg,
+          rgba(255, 0, 0, .06) 0 12px,
+          rgba(255, 0, 0, .13) 12px 24px);
+      position: relative;
+    }
+
+    html.repro-debug #intercept-app::before {
+      content: "#intercept-app — empty mount div, height: " attr(data-h);
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 2147483647;
+      background: #e00;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font: 700 13px/1.4 system-ui, sans-serif;
+    }
+
+    html.repro-debug #intercept-repro-banner {
+      display: block;
+    }
+
+    #intercept-repro-banner {
+      display: none;
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      z-index: 2147483647;
+      background: #111;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font: 400 12px/1.6 system-ui, sans-serif;
+      white-space: pre;
+      pointer-events: none;
+    }
+  </style>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var root = document.documentElement;
+      if (q.get('repro') === '1') root.classList.add('repro-host-height');
+      if (q.get('debug') === '1') root.classList.add('repro-debug');
+    })();
+  </script>
 </head>
 
 <body>
@@ -65,7 +139,6 @@
   <div id="root"></div>
 
   <!-- Shadow DOM Host Element -->
-  <div id="shadow-host">sss</div>
 
   <!--
       This HTML file is a template.
@@ -77,15 +150,42 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
-  <!-- Start of async Intercept tracking code -->
-  <script type="text/javascript">
-    var Intercept = { apiKey: '6462858e-c6a9-419f-90d4-88955e54e1b9' };
-  </script>
-  <script type="text/javascript" src="https://cx-intercept-staging-widget.questionpro.com/static/js/loader.js"></script>
-  <!-- End of async Intercept tracking code -->
- 
-</body>
+  <!-- Intercept tracking code now lives in the Script Lab tab (/script-lab) instead of being hardcoded here -->
 
+   <!-- INTERCEPT REPRO: live measurement readout (remove with the block above) -->
+   <div id="intercept-repro-banner"></div>
+   <script>
+     (function () {
+       if (!document.documentElement.classList.contains('repro-debug')) return;
+       var banner = document.getElementById('intercept-repro-banner');
+       function tick() {
+         var app = document.getElementById('intercept-app');
+         var bodyH = getComputedStyle(document.body).height;
+         if (app) {
+           var h = Math.round(app.getBoundingClientRect().height);
+           app.setAttribute('data-h', h + 'px');
+           banner.textContent =
+             'body computed height : ' + bodyH + '\n' +
+             '#intercept-app height : ' + h + 'px' +
+             (h > 1 ? '   <-- PHANTOM GAP' : '   (ok, no gap)') + '\n' +
+             'viewport height       : ' + window.innerHeight + 'px';
+         } else {
+           banner.textContent = 'waiting for #intercept-app to be injected...';
+         }
+         requestAnimationFrame(tick);
+       }
+       tick();
+     })();
+   </script>
+
+ 
+<!-- Start of async Intercept tracking code -->
+    <script type="text/javascript">
+       var Intercept = { apiKey: 'f3d00a90-c963-49a3-a8a2-bbfdb108ec29'};
+    </script>
+    <script type="text/javascript" src="https://intercept-widget.questionprogov.com/static/js/loader.js"></script>
+    <!-- End of async Intercept tracking code -->
+</body>
 <!-- https://bhavinpatil.questionpro.com/t/mMtJZMtJ -->
 
 
